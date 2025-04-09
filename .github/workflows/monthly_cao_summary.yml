@@ -1,0 +1,35 @@
+name: Monthly CAO Summary
+
+on:
+  schedule:
+    - cron: '0 21 9 * *'  # 21:00 UTC on the 9th of each month
+  workflow_dispatch:      # Optional: manual trigger
+
+jobs:
+  generate-summary:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run summary script
+        env:
+          MONGO_URI: ${{ secrets.MONGO_URI }}
+          TOGETHER_API_KEY: ${{ secrets.TOGETHER_API_KEY }}
+          EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+          EMAIL_RECEIVER: ${{ secrets.EMAIL_RECEIVER }}
+          SMTP_SERVER: smtp.gmail.com
+          SMTP_PORT: 587
+        run: python summary_report.py  # name of your Python script

@@ -32,4 +32,4 @@ jobs:
           EMAIL_RECEIVER: ${{ secrets.EMAIL_RECEIVER }}
           SMTP_SERVER: smtp.gmail.com
           SMTP_PORT: 587
-        run: python summary_report.py  # name of your Python script
+        run: python monthly_summarizer.py

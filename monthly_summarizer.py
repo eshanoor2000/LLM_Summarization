@@ -24,11 +24,11 @@ MONGO_SUMMARIES_COLLECTION = "brand_monitoring_summaries"
 
 EMAIL_PORT = int(os.getenv("EMAIL_PORT", 587))
 EMAIL_CONFIG = {
-    "sender_email": os.getenv("SENDER_EMAIL"),
-    "sender_password": os.getenv("SENDER_PASSWORD"),
-    "receiver_email": os.getenv("RECEIVER_EMAIL"),
-    "smtp_server": os.getenv("SMTP_SERVER", "smtp.gmail.com"),
-    "smtp_port": int(os.getenv("SMTP_PORT", 587)),
+    "EMAIL_SENDER": os.getenv("EMAIL_SENDER"),
+    "EMAIL_PASSWORD": os.getenv("EMAIL_PASSWORD"),
+    "EMAIL_RECEIVER": os.getenv("EMAIL_RECEIVER"),
+    "SMTP_SERVER": os.getenv("SMTP_SERVER", "smtp.gmail.com"),
+    "SMTP_PORT": int(os.getenv("SMTP_PORT", 587)),
 }
 
 # MongoDB
@@ -124,8 +124,8 @@ def send_report(summary, article_count):
     
     msg = EmailMessage()
     msg["Subject"] = subject
-    msg["From"] = EMAIL_CONFIG["sender_email"]
-    msg["To"] = EMAIL_CONFIG["receiver_email"]
+    msg["From"] = EMAIL_CONFIG["EMAIL_SENDER"]
+    msg["To"] = EMAIL_CONFIG["EMAIL_RECEIVER"]
     msg.set_content(
         f"Summary for {date_str}\n\n"
         f"Articles processed: {article_count}\n\n"
@@ -133,9 +133,9 @@ def send_report(summary, article_count):
     )
 
     try:
-        with smtplib.SMTP(EMAIL_CONFIG["smtp_server"], EMAIL_CONFIG["smtp_port"]) as server:
+        with smtplib.SMTP(EMAIL_CONFIG["SMTP_SERVER"], EMAIL_CONFIG["SMTP_PORT"]) as server:
             server.starttls()
-            server.login(EMAIL_CONFIG["sender_email"], EMAIL_CONFIG["sender_password"])
+            server.login(EMAIL_CONFIG["EMAIL_SENDER"], EMAIL_CONFIG["EMAIL_PASSWORD"])
             server.send_message(msg)
         print("Summary email sent.")
     except Exception as e:

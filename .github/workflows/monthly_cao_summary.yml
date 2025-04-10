@@ -2,7 +2,7 @@ name: Monthly CAO Summary
 
 on:
   schedule:
-    - cron: '0 21 9 * *'  # 21:00 UTC on the 9th of each month
+    - cron: '0 21 1 * *'  # 21:00 UTC on the 9th of each month
   workflow_dispatch:      # Optional: manual trigger
 
 jobs:

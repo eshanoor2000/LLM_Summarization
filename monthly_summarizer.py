@@ -65,19 +65,17 @@ def build_prompt(df):
     tags = [tag for row in df['tags'].dropna() for tag in row]
     top_keywords = Counter(tags).most_common(10)
 
-    df['upvotes'] = df['upvotes'].fillna(0)
-    df['comments'] = df['comments'].fillna(0)
-    top_engaged = df.sort_values(['upvotes', 'comments'], ascending=False).head(5)
+    engagement_df = df.dropna(subset=['upvotes', 'comments'])
+    top_engaged = engagement_df.sort_values(by=['upvotes', 'comments'], ascending=False).head(5)
 
-    content_snippets = "\n\n---\n\n".join(
-        f"{row['title']}\n{row['content'][:500]}..." 
-        for _, row in df.iterrows()
-    )
+    content_snippets = "\n\n---\n\n".join(df['content'].fillna('').str[:1000].tolist())
 
-    return f"""
+    prompt = f"""
 You are an analytics and communications expert reviewing online conversations and articles related to the Condominium Authority of Ontario (CAO).
 
 Based on the following scraped content from various sources (news, forums, Reddit, etc.), provide a structured, insightful summary about how CAO is being discussed in the public sphere.
+
+Be concise, but thorough. Avoid speculation, relying on what's present in the content. Use a consistent tone suitable for a communications briefing or stakeholder update.
 
 Summarize the following dimensions:
 
@@ -87,6 +85,8 @@ Summarize the following dimensions:
 4. **Engagement Highlights**: Which posts have the highest numbers of comments and upvotes?
 5. **Discussion Peaks**: Any timeframe where discussion volume surged? Why?
 6. **Other Insights**: Subtle tone patterns, changing sentiment across platforms, or surprising mentions related to CAO.
+7. **Summary Insights**: In 3-5 sentences, synthesize the main message of the posts and articles, list some key concerns, and the perceived sentiment towards the CAO. Highlight any reputational risks or public perception challenges.
+8. **Top Reddit Posts**: List the top 3 Reddit posts with the most upvotes and comments, only if there are enough entries where the source is Reddit, if not, leave this out.
 
 ---
 
@@ -104,6 +104,7 @@ Summarize the following dimensions:
 **Content Sample (truncated)**:
 {content_snippets}
 """
+    return prompt
 
 # Execution Logic
 def generate_summary(prompt):
@@ -144,6 +145,7 @@ def send_report(summary, article_count):
 def run_summary():
     df = load_daily_articles()
     date_str = datetime.utcnow().strftime("%Y-%m-%d")
+    generated_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
 
     if df.empty:
         print(f"No data for {date_str}")
@@ -154,20 +156,23 @@ def run_summary():
         prompt = build_prompt(df)
         summary = generate_summary(prompt)
         
+        # Format the summary with metadata
+        formatted_summary = f"{summary}\n\n---\n\n#### ** Metadata**  \n- **Generated at**: {generated_at}  \n- **Total Articles Analyzed**: {len(df)}"
+        
         # Save to MongoDB
         client = MongoClient(MONGO_URI)
         client[MONGO_DB][MONGO_SUMMARIES_COLLECTION].update_one(
             {"date": date_str},
             {"$set": {
                 "date": date_str,
-                "summary": summary,
+                "summary": formatted_summary,
                 "articles": len(df),
                 "generated_at": datetime.utcnow()
             }},
             upsert=True
         )
         
-        send_report(summary, len(df))
+        send_report(formatted_summary, len(df))
         print(f"Processed {len(df)} articles for {date_str}")
 
     except Exception as e:

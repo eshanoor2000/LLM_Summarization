@@ -144,11 +144,11 @@ def send_report(summary, article_count):
 
 def run_summary():
     df = load_daily_articles()
-    date_str = datetime.utcnow().strftime("%Y-%m-%d")
-    generated_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+    # Use ISO 8601 format for date fields
+    date_iso = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0).isoformat() + 'Z'
 
     if df.empty:
-        print(f"No data for {date_str}")
+        print(f"No data for {date_iso}")
         send_report("No articles found today.", 0)
         return
 
@@ -156,24 +156,23 @@ def run_summary():
         prompt = build_prompt(df)
         summary = generate_summary(prompt)
         
-        # Format the summary with metadata
-        formatted_summary = f"{summary}\n\n---\n\n#### ** Metadata**  \n- **Generated at**: {generated_at}  \n- **Total Articles Analyzed**: {len(df)}"
+        # Format the summary with metadata (markdown)
+        formatted_summary = f"{summary}\n\n---\n\n#### ** Metadata**  \n- **Generated at**: {date_iso}  \n- **Total Articles Analyzed**: {len(df)}"
         
-        # Save to MongoDB
+        # Save to MongoDB with consistent structure (no generated_at)
         client = MongoClient(MONGO_URI)
         client[MONGO_DB][MONGO_SUMMARIES_COLLECTION].update_one(
-            {"date": date_str},
+            {"date": date_iso},
             {"$set": {
-                "date": date_str,
+                "date": date_iso,
                 "summary": formatted_summary,
-                "articles": len(df),
-                "generated_at": datetime.utcnow()
+                "articles": len(df)
             }},
             upsert=True
         )
         
         send_report(formatted_summary, len(df))
-        print(f"Processed {len(df)} articles for {date_str}")
+        print(f"Processed {len(df)} articles for {date_iso}")
 
     except Exception as e:
         error_msg = f"Summary failed: {str(e)}"

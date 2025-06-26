@@ -12,55 +12,75 @@ from email.mime.text import MIMEText
 from dotenv import load_dotenv
 load_dotenv()
 
-# Configuration
-openai.api_key = os.getenv("TOGETHER_API_KEY")
-openai.api_base = "https://api.together.xyz/v1"
-MODEL_NAME = "deepseek-ai/DeepSeek-R1-Distill-Llama-70B-Free"
-
+# --- Configuration from environment variables ---
 MONGO_URI = os.getenv("MONGO_URI")
 MONGO_DB = os.getenv("MONGO_DB", "brand_monitoring")
-MONGO_COLLECTION = os.getenv("MONGO_COLLECTION", "processed_articles")
-MONGO_SUMMARIES_COLLECTION = "brand_monitoring_summaries"
+PROCESSED_COLLECTION = os.getenv("PROCESSED_COLLECTION", "processed_articles")
+SUMMARIES_COLLECTION = os.getenv("SUMMARIES_COLLECTION", "monthly_summaries")
+EMAIL_SENDER = os.getenv("EMAIL_SENDER")
+EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
+EMAIL_RECEIVER = os.getenv("EMAIL_RECEIVER")
+SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
+SMTP_PORT = int(os.getenv("SMTP_PORT", 587))
+OPENAI_API_KEY = os.getenv("TOGETHER_API_KEY")
 
+# --- Hardcoded configuration ---
+MONGO_SUMMARIES_COLLECTION = "brand_monitoring_summaries"
 EMAIL_PORT = int(os.getenv("EMAIL_PORT", 587))
 EMAIL_CONFIG = {
-    "EMAIL_SENDER": os.getenv("EMAIL_SENDER"),
-    "EMAIL_PASSWORD": os.getenv("EMAIL_PASSWORD"),
-    "EMAIL_RECEIVER": os.getenv("EMAIL_RECEIVER"),
-    "SMTP_SERVER": os.getenv("SMTP_SERVER", "smtp.gmail.com"),
-    "SMTP_PORT": int(os.getenv("SMTP_PORT", 587)),
+    "EMAIL_SENDER": EMAIL_SENDER,
+    "EMAIL_PASSWORD": EMAIL_PASSWORD,
+    "EMAIL_RECEIVER": EMAIL_RECEIVER,
+    "SMTP_SERVER": SMTP_SERVER,
+    "SMTP_PORT": SMTP_PORT,
 }
 
 # MongoDB
 def load_daily_articles():
-    """Load articles scraped TODAY (execution day: April 6, May 6, etc.)"""
+    """Load articles scraped in the past 30 days (or all articles if none in past 30 days)"""
     client = MongoClient(MONGO_URI)
-    collection = client[MONGO_DB][MONGO_COLLECTION]
+    collection = client[MONGO_DB][PROCESSED_COLLECTION]
     
+    # First try past 30 days
     today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    thirty_days_ago = today - timedelta(days=30)
+    
     query = {
         "scraped_date": {
-            "$gte": today,
-            "$lt": today + timedelta(days=1)
+            "$gte": thirty_days_ago.isoformat(),
+            "$lt": (today + timedelta(days=1)).isoformat()
         }
     }
     
     data = list(collection.find(query))
+    
+    # If no articles in past 30 days, get all articles
     if not data:
-        print(f"No articles for {today.strftime('%Y-%m-%d')}")
+        print(f"No articles in past 30 days, loading all articles...")
+        data = list(collection.find({}))
+    
+    if not data:
+        print(f"No articles found in database")
         return pd.DataFrame()
 
+    print(f"Found {len(data)} articles to summarize")
     df = pd.DataFrame(data)
     df['scraped_date'] = pd.to_datetime(df['scraped_date'], errors='coerce')
     return df.dropna(subset=['scraped_date'])
 
 # Prompt Engineering
 def build_prompt(df):
-    sentiment_summary = Counter(
-        s['sentiment']
-        for row in df['sentiment_analysis'].dropna()
-        for s in row
-    )
+    # Use the sentiment label for each article (handle both old and new formats)
+    sentiment_labels = []
+    for row in df['sentiment_analysis'].dropna():
+        if isinstance(row, list) and len(row) > 0 and 'label' in row[0]:
+            # New format: array of sentiment objects
+            sentiment_labels.append(row[0]['label'])
+        elif isinstance(row, dict) and 'aggregate' in row and 'label' in row['aggregate']:
+            # Old format: nested object with aggregate
+            sentiment_labels.append(row['aggregate']['label'])
+    
+    sentiment_summary = Counter(sentiment_labels)
 
     tags = [tag for row in df['tags'].dropna() for tag in row]
     top_keywords = Counter(tags).most_common(10)
@@ -107,15 +127,32 @@ Summarize the following dimensions:
     return prompt
 
 # Execution Logic
+def clean_summary(summary_text):
+    """Remove any text before the structured summary header"""
+    header = "### Structured Summary of Public Discussions Related to the Condominium Authority of Ontario (CAO)"
+    
+    if header in summary_text:
+        # Find the position of the header and keep everything from that point onwards
+        header_index = summary_text.find(header)
+        return summary_text[header_index:].strip()
+    
+    # If header not found, return the original text
+    return summary_text.strip()
+
 def generate_summary(prompt):
     try:
-        response = openai.ChatCompletion.create(
-            model=MODEL_NAME,
+        client = openai.OpenAI(
+            api_key=OPENAI_API_KEY,
+            base_url="https://api.together.xyz/v1"
+        )
+        response = client.chat.completions.create(
+            model="deepseek-ai/DeepSeek-R1-Distill-Llama-70B-Free",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.7,
             max_tokens=2048
         )
-        return response["choices"][0]["message"]["content"].strip()
+        raw_summary = response.choices[0].message.content.strip()
+        return clean_summary(raw_summary)
     except Exception as e:
         raise RuntimeError(f"LLM failed: {str(e)}")
 
@@ -161,7 +198,7 @@ def run_summary():
         
         # Save to MongoDB with consistent structure (date as datetime)
         client = MongoClient(MONGO_URI)
-        client[MONGO_DB][MONGO_SUMMARIES_COLLECTION].update_one(
+        client[MONGO_DB][SUMMARIES_COLLECTION].update_one(
             {"date": date_dt},
             {"$set": {
                 "date": date_dt,

@@ -126,17 +126,16 @@ Summarize the following dimensions:
 """
     return prompt
 
-# Execution Logic
+# Cleaning summary
 def clean_summary(summary_text):
-    """Remove any text before the structured summary header"""
-    header = "### Structured Summary of Public Discussions Related to the Condominium Authority of Ontario (CAO)"
-    
-    if header in summary_text:
-        # Find the position of the header and keep everything from that point onwards
-        header_index = summary_text.find(header)
-        return summary_text[header_index:].strip()
-    
-    # If header not found, return the original text
+    """
+    Removes everything before the CAO structured summary header.
+    Returns the summary starting from the header.
+    """
+    pattern = r"(### ?\*?\*?Structured Summary of Public Discussions Related to the Condominium Authority of Ontario \(CAO\)\*?\*?)"
+    match = re.search(pattern, summary_text)
+    if match:
+        return summary_text[match.start():].strip()
     return summary_text.strip()
 
 def generate_summary(prompt):

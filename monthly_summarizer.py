@@ -1,4 +1,5 @@
 import os
+import re
 import pandas as pd
 import openai
 from collections import Counter
@@ -41,14 +42,14 @@ def load_daily_articles():
     client = MongoClient(MONGO_URI)
     collection = client[MONGO_DB][PROCESSED_COLLECTION]
     
-    # First try past 30 days
+    # Get start and end of current UTC day
     today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-    thirty_days_ago = today - timedelta(days=30)
+    tomorrow = today + timedelta(days=1)
     
     query = {
         "scraped_date": {
-            "$gte": thirty_days_ago.isoformat(),
-            "$lt": (today + timedelta(days=1)).isoformat()
+            "$gte": today.isoformat(),
+            "$lt": tomorrow.isoformat()
         }
     }
     

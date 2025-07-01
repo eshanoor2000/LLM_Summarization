@@ -127,17 +127,19 @@ Summarize the following dimensions:
 """
     return prompt
 
-# Cleaning summary
+import re
+
 def clean_summary(summary_text):
-    """
-    Removes everything before the CAO structured summary header.
-    Returns the summary starting from the header.
-    """
-    pattern = r"(### ?\*?\*?Structured Summary of Public Discussions Related to the Condominium Authority of Ontario \(CAO\)\*?\*?)"
-    match = re.search(pattern, summary_text)
-    if match:
-        return summary_text[match.start():].strip()
-    return summary_text.strip()
+    # Remove any <think>...</think> blocks (non-greedy)
+    cleaned = re.sub(r'<think>.*?</think>', '', summary_text, flags=re.DOTALL | re.IGNORECASE)
+    
+    # Find summary header
+    header = "### **Structured Summary of Public Discussions"
+    header_idx = cleaned.find(header)
+    if header_idx != -1:
+        cleaned = cleaned[header_idx:]
+    
+    return cleaned.strip()
 
 def generate_summary(prompt):
     try:
